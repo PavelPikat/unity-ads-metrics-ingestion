@@ -3,6 +3,7 @@ import {test} from "node:test";
 import {buildApp} from "../src/app.js";
 import type {MetricEvent} from "../src/domain/metric-event.js";
 import type {MetricsPublisher} from "../src/publisher/metrics-publisher.js";
+import {PublishAdmissionController} from "../src/publisher/publish-admission-controller.js";
 
 const validEvent = {
     eventId: "550e8400-e29b-41d4-a716-446655440000",
@@ -143,6 +144,60 @@ test("logs publisher acknowledgement failures", async () => {
         assert.equal(logLines.some((line) => line.includes(validEvent.deviceId)), false);
         assert.equal(logLines.some((line) => line.includes(validEvent.adId)), false);
     } finally {
+        await app.close();
+    }
+});
+
+test("rejects requests when publisher capacity is exhausted", async () => {
+    let releaseFirstPublish: (() => void) | undefined;
+    let markFirstPublishStarted: (() => void) | undefined;
+    const firstPublishStarted = new Promise<void>((resolve) => {
+        markFirstPublishStarted = resolve;
+    });
+    const firstPublishBlocked = new Promise<void>((resolve) => {
+        releaseFirstPublish = resolve;
+    });
+    const publisher: MetricsPublisher = {
+        async publish() {
+            markFirstPublishStarted?.();
+            await firstPublishBlocked;
+        },
+        async close() {
+            // Nothing to close in this test.
+        },
+    };
+    const admission = new PublishAdmissionController(1);
+    const app = buildApp(
+        {logger: false},
+        {admission, publisher},
+    );
+
+    try {
+        const firstResponse = app.inject({
+            method: "POST",
+            url: "/v1/metrics",
+            payload: validEvent,
+        });
+        await firstPublishStarted;
+
+        const overloadedResponse = await app.inject({
+            method: "POST",
+            url: "/v1/metrics",
+            payload: validEvent,
+        });
+
+        assert.equal(overloadedResponse.statusCode, 429);
+        assert.equal(overloadedResponse.headers["retry-after"], "1");
+        assert.deepEqual(overloadedResponse.json(), {
+            statusCode: 429,
+            error: "Too Many Requests",
+            message: "Publisher capacity is exhausted",
+        });
+
+        releaseFirstPublish?.();
+        assert.equal((await firstResponse).statusCode, 202);
+    } finally {
+        releaseFirstPublish?.();
         await app.close();
     }
 });

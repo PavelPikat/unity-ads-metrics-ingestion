@@ -1,5 +1,6 @@
 import type {FastifyPluginAsync} from "fastify";
 import {metricEventSchema} from "../domain/metric-event.js";
+import {PublisherOverloadedError} from "../publisher/concurrency-limited-metrics-publisher.js";
 import type {MetricsPublisher} from "../publisher/metrics-publisher.js";
 
 interface MetricsRoutesOptions {
@@ -46,6 +47,21 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
         try {
             await publisher.publish(result.data);
         } catch (error) {
+            if (error instanceof PublisherOverloadedError) {
+                request.log.warn({
+                    limit: error.limit,
+                }, "Metrics publisher capacity is exhausted");
+
+                return reply
+                    .header("retry-after", "1")
+                    .code(429)
+                    .send({
+                        statusCode: 429,
+                        error: "Too Many Requests",
+                        message: "Publisher capacity is exhausted",
+                    });
+            }
+
             request.log.error({
                 err: error,
                 eventId: result.data.eventId,
