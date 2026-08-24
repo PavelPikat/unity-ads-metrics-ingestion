@@ -2,6 +2,8 @@ name: App validation
 
 on:
   pull_request:
+    paths:
+      - "app/**"
 
 permissions:
   contents: read
@@ -12,7 +14,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Type-check and build
+    name: Type-check, test and build
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -41,6 +43,9 @@ jobs:
 
       - name: Type-check
         run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
       - name: Build
         run: pnpm build
