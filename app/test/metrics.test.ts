@@ -19,6 +19,9 @@ test("accepts a valid metrics event and logs only event metadata", async () => {
         async publish(event) {
             publishedEvents.push(event);
         },
+        async close() {
+            // Nothing to close in this test.
+        },
     };
     const app = buildApp({
         logger: {
@@ -28,7 +31,7 @@ test("accepts a valid metrics event and logs only event metadata", async () => {
                 },
             },
         },
-    }, publisher);
+    }, {publisher});
 
     try {
         const response = await app.inject({
@@ -61,8 +64,11 @@ test("rejects an invalid metrics event", async () => {
         async publish() {
             assert.fail("Invalid events must not be published");
         },
+        async close() {
+            // Nothing to close in this test.
+        },
     };
-    const app = buildApp({logger: false}, publisher);
+    const app = buildApp({logger: false}, {publisher});
 
     try {
         const response = await app.inject({
@@ -88,6 +94,9 @@ test("logs publisher acknowledgement failures", async () => {
         async publish() {
             throw new Error("Kafka acknowledgement timed out");
         },
+        async close() {
+            // Nothing to close in this test.
+        },
     };
     const app = buildApp({
         logger: {
@@ -97,7 +106,7 @@ test("logs publisher acknowledgement failures", async () => {
                 },
             },
         },
-    }, publisher);
+    }, {publisher});
 
     try {
         const response = await app.inject({
