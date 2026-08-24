@@ -2,7 +2,22 @@ import type {FastifyPluginAsync} from "fastify";
 import {metricEventSchema} from "../domain/metric-event.js";
 
 export const metricsRoutes: FastifyPluginAsync = async (app) => {
-    app.post("/v1/metrics", async (request, reply) => {
+    app.post("/v1/metrics", {
+        onRequest: async (request, reply) => {
+            const mediaType = request.headers["content-type"]
+                ?.split(";", 1)[0]
+                ?.trim()
+                .toLowerCase();
+
+            if (mediaType !== "application/json") {
+                return reply.code(415).send({
+                    statusCode: 415,
+                    error: "Unsupported Media Type",
+                    message: "Content-Type must be application/json",
+                });
+            }
+        },
+    }, async (request, reply) => {
         const result = metricEventSchema.safeParse(request.body);
 
         if (!result.success) {
