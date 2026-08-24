@@ -2,10 +2,13 @@ import Fastify, {
     type FastifyInstance,
     type FastifyServerOptions,
 } from "fastify";
+import type {MetricsPublisher} from "./publisher/metrics-publisher.js";
+import {NoopMetricsPublisher} from "./publisher/noop-metrics-publisher.js";
 import {metricsRoutes} from "./routes/metrics.js";
 
 export function buildApp(
     options: FastifyServerOptions = {},
+    publisher: MetricsPublisher = new NoopMetricsPublisher(),
 ): FastifyInstance {
     const app = Fastify({
         logger: true,
@@ -14,7 +17,7 @@ export function buildApp(
         ...options,
     });
 
-    app.register(metricsRoutes);
+    app.register(metricsRoutes, {publisher});
 
     return app;
 }

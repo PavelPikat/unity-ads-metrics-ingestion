@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {buildApp} from "../src/app.js";
+import type {MetricEvent} from "../src/domain/metric-event.js";
+import type {MetricsPublisher} from "../src/publisher/metrics-publisher.js";
 
 const validEvent = {
     eventId: "550e8400-e29b-41d4-a716-446655440000",
@@ -12,6 +14,12 @@ const validEvent = {
 
 test("accepts a valid metrics event and logs only event metadata", async () => {
     const logLines: string[] = [];
+    const publishedEvents: MetricEvent[] = [];
+    const publisher: MetricsPublisher = {
+        async publish(event) {
+            publishedEvents.push(event);
+        },
+    };
     const app = buildApp({
         logger: {
             stream: {
@@ -20,7 +28,7 @@ test("accepts a valid metrics event and logs only event metadata", async () => {
                 },
             },
         },
-    });
+    }, publisher);
 
     try {
         const response = await app.inject({
@@ -30,6 +38,7 @@ test("accepts a valid metrics event and logs only event metadata", async () => {
         });
 
         assert.equal(response.statusCode, 202);
+        assert.deepEqual(publishedEvents, [validEvent]);
 
         const acceptedLog = logLines
             .map((line) => JSON.parse(line) as Record<string, unknown>)
@@ -48,7 +57,12 @@ test("accepts a valid metrics event and logs only event metadata", async () => {
 });
 
 test("rejects an invalid metrics event", async () => {
-    const app = buildApp({logger: false});
+    const publisher: MetricsPublisher = {
+        async publish() {
+            assert.fail("Invalid events must not be published");
+        },
+    };
+    const app = buildApp({logger: false}, publisher);
 
     try {
         const response = await app.inject({
@@ -63,6 +77,62 @@ test("rejects an invalid metrics event", async () => {
             error: "Bad Request",
             message: "Invalid metrics event",
         });
+    } finally {
+        await app.close();
+    }
+});
+
+test("logs publisher acknowledgement failures", async () => {
+    const logLines: string[] = [];
+    const publisher: MetricsPublisher = {
+        async publish() {
+            throw new Error("Kafka acknowledgement timed out");
+        },
+    };
+    const app = buildApp({
+        logger: {
+            stream: {
+                write(line) {
+                    logLines.push(line);
+                },
+            },
+        },
+    }, publisher);
+
+    try {
+        const response = await app.inject({
+            method: "POST",
+            url: "/v1/metrics",
+            payload: validEvent,
+        });
+
+        assert.equal(response.statusCode, 503);
+        assert.deepEqual(response.json(), {
+            statusCode: 503,
+            error: "Service Unavailable",
+            message: "Metrics publisher is unavailable",
+        });
+
+        const logs = logLines.map(
+            (line) => JSON.parse(line) as Record<string, unknown>,
+        );
+        const failureLog = logs.find(
+            (entry) => entry.msg === "Metrics publisher failed to acknowledge event",
+        );
+
+        assert.ok(failureLog);
+        assert.equal(failureLog.eventId, validEvent.eventId);
+        assert.equal(failureLog.eventType, validEvent.eventType);
+        const loggedError = failureLog.err as Record<string, unknown>;
+        assert.equal(loggedError.type, "Error");
+        assert.equal(loggedError.message, "Kafka acknowledgement timed out");
+        assert.equal(typeof loggedError.stack, "string");
+        assert.equal(
+            logs.some((entry) => entry.msg === "Metrics event accepted"),
+            false,
+        );
+        assert.equal(logLines.some((line) => line.includes(validEvent.deviceId)), false);
+        assert.equal(logLines.some((line) => line.includes(validEvent.adId)), false);
     } finally {
         await app.close();
     }

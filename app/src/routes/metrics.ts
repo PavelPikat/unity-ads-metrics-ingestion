@@ -1,7 +1,15 @@
 import type {FastifyPluginAsync} from "fastify";
 import {metricEventSchema} from "../domain/metric-event.js";
+import type {MetricsPublisher} from "../publisher/metrics-publisher.js";
 
-export const metricsRoutes: FastifyPluginAsync = async (app) => {
+interface MetricsRoutesOptions {
+    publisher: MetricsPublisher;
+}
+
+export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
+    app,
+    {publisher},
+) => {
     app.post("/v1/metrics", {
         onRequest: async (request, reply) => {
             const mediaType = request.headers["content-type"]
@@ -32,6 +40,22 @@ export const metricsRoutes: FastifyPluginAsync = async (app) => {
                 statusCode: 400,
                 error: "Bad Request",
                 message: "Invalid metrics event",
+            });
+        }
+
+        try {
+            await publisher.publish(result.data);
+        } catch (error) {
+            request.log.error({
+                err: error,
+                eventId: result.data.eventId,
+                eventType: result.data.eventType,
+            }, "Metrics publisher failed to acknowledge event");
+
+            return reply.code(503).send({
+                statusCode: 503,
+                error: "Service Unavailable",
+                message: "Metrics publisher is unavailable",
             });
         }
 
