@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "k8s/**"
+      - ".github/workflows/kubernetes-validation.yaml"
 
 permissions:
   contents: read
@@ -12,11 +13,18 @@ concurrency:
   group: kubernetes-validation-${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  KIND_VERSION: v0.32.0
+  KIND_LINUX_AMD64_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
+  KIND_NODE_IMAGE: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+  KUBECTL_VERSION: v1.35.5
+  KUBECTL_LINUX_AMD64_SHA256: 90f75ea6ecc9ea5633262e1c0b83a40560003b30fc94a04cb099404fcef0c224
+
 jobs:
   validate:
     name: Lint and validate manifests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -39,3 +47,33 @@ jobs:
             -summary \
             -kubernetes-version 1.35.0 \
             /k8s-rendered.yaml
+
+      - name: Install Kubernetes validation tools
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "${RUNNER_TEMP}/kind" \
+            "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_LINUX_AMD64_SHA256}  ${RUNNER_TEMP}/kind" | sha256sum --check --strict
+          chmod +x "${RUNNER_TEMP}/kind"
+
+          curl --fail --location --silent --show-error \
+            --output "${RUNNER_TEMP}/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_LINUX_AMD64_SHA256}  ${RUNNER_TEMP}/kubectl" | sha256sum --check --strict
+          chmod +x "${RUNNER_TEMP}/kubectl"
+
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
+
+      - name: Create disposable Kubernetes cluster
+        id: create-kind-cluster
+        run: kind create cluster --name manifest-validation --image "${KIND_NODE_IMAGE}" --wait 120s
+
+      - name: Apply namespace admission policy
+        run: kubectl apply --filename k8s/namespace.yaml
+
+      - name: Dry-run deployment against Kubernetes API
+        run: kubectl apply --server-side --dry-run=server --kustomize k8s
+
+      - name: Delete disposable Kubernetes cluster
+        if: always() && steps.create-kind-cluster.outcome == 'success'
+        run: kind delete cluster --name manifest-validation

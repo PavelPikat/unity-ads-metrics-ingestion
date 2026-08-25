@@ -29,6 +29,11 @@ kubectl kustomize k8s |
   docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0-alpine -strict -summary
 ```
 
+For pull requests that change `k8s/`, the Kubernetes validation workflow also creates a disposable Kubernetes 1.35
+Kind cluster and submits the Kustomize resources using server-side dry run. The namespace is applied to that temporary
+cluster first so namespaced resources and the Restricted Pod Security admission policy can be evaluated. The workflow
+does not deploy the application and deletes the cluster after validation.
+
 The deployment references `unity-ads-metrics-ingestion:0.1.0` as a demonstration image. A real environment should use
 Kustomize to replace it with an immutable registry digest, for example:
 
