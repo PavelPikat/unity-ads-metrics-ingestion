@@ -40,6 +40,10 @@ Fastify writes structured JSON logs to standard output. Accepted and failed publ
 Full payloads, `deviceId`, and `adId` are not logged. Validation failure logs contain only issue codes and field paths.
 The application does not export logs through its OpenTelemetry SDK.
 
+When a log is written within an active span, Pino adds `trace_id` and `span_id` fields from the OpenTelemetry context.
+Grafana can use `trace_id` to navigate from a Loki log record to the corresponding Tempo trace. Lifecycle and other
+process-level logs without an active span do not contain correlation IDs.
+
 ## Local LGTM stack
 
 Docker Compose runs the production app image together with Grafana's OpenTelemetry LGTM development stack:
