@@ -5,13 +5,14 @@ intended for design review and interview discussion rather than deployment to a 
 
 ## Resources
 
-| Manifest                     | Purpose                                                                                   |
-|------------------------------|-------------------------------------------------------------------------------------------|
-| `namespace.yaml`             | Isolates the workload and enforces the Restricted Pod Security Standard.                  |
-| `service-account.yaml`       | Gives the pod an identity without mounting Kubernetes API credentials.                    |
-| `deployment.yaml`            | Runs three replicas with safe rollout, health, resource, security, and shutdown settings. |
-| `service.yaml`               | Exposes the ingestion endpoint inside the cluster through a stable ClusterIP.             |
-| `pod-disruption-budget.yaml` | Keeps at least two replicas available during voluntary disruptions.                       |
+| Manifest                         | Purpose                                                                                  |
+|----------------------------------|------------------------------------------------------------------------------------------|
+| `namespace.yaml`                 | Isolates the workload and enforces the Restricted Pod Security Standard.                 |
+| `service-account.yaml`           | Gives the pod an identity without mounting Kubernetes API credentials.                   |
+| `deployment.yaml`                | Runs scalable pods with safe rollout, health, resource, security, and shutdown settings. |
+| `service.yaml`                   | Exposes the ingestion endpoint inside the cluster through a stable ClusterIP.            |
+| `horizontal-pod-autoscaler.yaml` | Scales the deployment between three and twenty replicas from CPU utilization.            |
+| `pod-disruption-budget.yaml`     | Keeps at least two replicas available during voluntary disruptions.                      |
 
 ## Render and validate
 
@@ -38,7 +39,7 @@ kustomize edit set image unity-ads-metrics-ingestion=registry.example.com/ads/me
 
 ## Availability and rollout behavior
 
-- Three replicas avoid a single-pod availability boundary.
+- The HPA maintains at least three replicas, avoiding a single-pod availability boundary.
 - `maxUnavailable: 0` and `maxSurge: 1` retain all existing capacity while a replacement pod becomes ready.
 - `minReadySeconds` prevents a briefly healthy pod from immediately counting as available.
 - The disruption budget allows one replica at a time to be voluntarily evicted.
@@ -47,6 +48,21 @@ kustomize edit set image unity-ads-metrics-ingestion=registry.example.com/ads/me
 
 The resource values are starting assumptions. Production requests, limits, and replica counts should be derived from
 load-test results and observed utilization rather than copied unchanged.
+
+## Autoscaling
+
+The Horizontal Pod Autoscaler keeps at least three replicas, scales up to twenty, and initially targets 70% average
+CPU utilization relative to each pod's CPU request. Scale-up can add four pods or double the current replica count per
+minute, whichever is larger. Scale-down waits for five minutes of stable recommendations and then removes at most one
+pod per minute.
+
+The HPA requires the cluster resource metrics API, normally provided by Metrics Server. CPU is a portable initial
+signal rather than a proven production target. Publisher saturation, acknowledgement latency, `429` responses, and
+Kafka capacity should be evaluated before choosing the final scaling policy; adding HTTP pods cannot increase Kafka
+capacity.
+
+The Deployment intentionally omits `spec.replicas` so repeated manifest applications do not overwrite the replica
+count managed by the HPA.
 
 ## Health and shutdown
 
@@ -82,7 +98,6 @@ owned by the cluster observability team.
 ## Deliberate omissions
 
 - An Ingress or Gateway depends on the platform's routing, TLS, and authentication standards.
-- Horizontal autoscaling needs an agreed scaling signal and targets supported by load-test evidence.
 - NetworkPolicy needs the actual Kafka, DNS, and OpenTelemetry destinations before egress can be safely restricted.
 - Kafka credentials and configuration belong in environment-specific secret/configuration resources.
 

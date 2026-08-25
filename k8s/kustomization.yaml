@@ -8,4 +8,5 @@ resources:
   - service-account.yaml
   - deployment.yaml
   - service.yaml
+  - horizontal-pod-autoscaler.yaml
   - pod-disruption-budget.yaml

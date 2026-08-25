@@ -7,7 +7,6 @@ metadata:
     app.kubernetes.io/component: ingestion-api
     app.kubernetes.io/part-of: unity-ads
 spec:
-  replicas: 3
   revisionHistoryLimit: 5
   minReadySeconds: 10
   progressDeadlineSeconds: 600
