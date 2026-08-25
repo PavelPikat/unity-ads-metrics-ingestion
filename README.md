@@ -141,6 +141,13 @@ Custom metrics:
 Metric attributes are deliberately low-cardinality: outcome, HTTP status code, error type, and the schema-controlled
 event type. Identifiers such as `eventId`, `deviceId`, and `adId` are not metric attributes.
 
+OpenTelemetry also collects Node.js runtime metrics with five-second monitoring precision, including:
+
+- event-loop utilization, active/idle time, and delay percentiles;
+- garbage-collection pause duration by collection type;
+- V8 heap size, used memory, available memory, and physical memory by heap space;
+- active resources keeping the event loop alive.
+
 ## Graceful shutdown
 
 The server handles `SIGTERM` and `SIGINT`:

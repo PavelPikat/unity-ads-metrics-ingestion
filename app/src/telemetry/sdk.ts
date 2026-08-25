@@ -2,6 +2,7 @@ import {FastifyOtelInstrumentation} from "@fastify/otel";
 import {OTLPMetricExporter} from "@opentelemetry/exporter-metrics-otlp-proto";
 import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-proto";
 import {HttpInstrumentation} from "@opentelemetry/instrumentation-http";
+import {RuntimeNodeInstrumentation} from "@opentelemetry/instrumentation-runtime-node";
 import {defaultResource, resourceFromAttributes} from "@opentelemetry/resources";
 import {PeriodicExportingMetricReader} from "@opentelemetry/sdk-metrics";
 import {NodeSDK} from "@opentelemetry/sdk-node";
@@ -29,6 +30,10 @@ export function startTelemetry(): TelemetryLifecycle {
                 registerOnInitialization: true,
                 ignorePaths: "/health/*",
                 instrumentHooks: false,
+            }),
+            new RuntimeNodeInstrumentation({
+                monitoringPrecision: 5_000,
+                captureUncaughtException: false,
             }),
         ],
     });
