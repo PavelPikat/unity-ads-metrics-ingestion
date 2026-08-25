@@ -1,4 +1,8 @@
 import type {MetricEvent} from "../domain/metric-event.js";
+import {
+    recordPublisherOverload,
+    tracePublisherPublish,
+} from "../telemetry/instruments.js";
 import type {MetricsPublisher} from "./metrics-publisher.js";
 import type {PublishAdmissionController} from "./publish-admission-controller.js";
 
@@ -20,11 +24,15 @@ export class ConcurrencyLimitedMetricsPublisher implements MetricsPublisher {
         const release = this.admission.tryAcquire();
 
         if (!release) {
+            recordPublisherOverload(event);
             throw new PublisherOverloadedError(this.admission.limit);
         }
 
         try {
-            await this.publisher.publish(event);
+            await tracePublisherPublish(
+                event,
+                () => this.publisher.publish(event),
+            );
         } finally {
             release();
         }

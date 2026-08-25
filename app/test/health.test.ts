@@ -3,6 +3,7 @@ import {test} from "node:test";
 import {buildApp} from "../src/app.js";
 import {ApplicationState} from "../src/application-state.js";
 import type {MetricsPublisher} from "../src/publisher/metrics-publisher.js";
+import type {TelemetryLifecycle} from "../src/telemetry/lifecycle.js";
 
 test("reports liveness", async () => {
     const app = buildApp({logger: false});
@@ -56,9 +57,10 @@ test("reports not ready while the application is draining", async () => {
     }
 });
 
-test("updates lifecycle state and closes the publisher", async () => {
+test("updates lifecycle state and closes application resources", async () => {
     const state = new ApplicationState();
     let publisherCloseCalls = 0;
+    let telemetryShutdownCalls = 0;
     const publisher: MetricsPublisher = {
         async publish() {
             // Not used in this test.
@@ -67,7 +69,12 @@ test("updates lifecycle state and closes the publisher", async () => {
             publisherCloseCalls += 1;
         },
     };
-    const app = buildApp({logger: false}, {publisher, state});
+    const telemetry: TelemetryLifecycle = {
+        async shutdown() {
+            telemetryShutdownCalls += 1;
+        },
+    };
+    const app = buildApp({logger: false}, {publisher, state, telemetry});
 
     await app.ready();
     assert.equal(state.isReady, true);
@@ -75,4 +82,5 @@ test("updates lifecycle state and closes the publisher", async () => {
     await app.close();
     assert.equal(state.isReady, false);
     assert.equal(publisherCloseCalls, 1);
+    assert.equal(telemetryShutdownCalls, 1);
 });

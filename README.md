@@ -116,6 +116,31 @@ Fastify writes structured JSON logs to standard output. Accepted and failed publ
 Full payloads, `deviceId`, and `adId` are not logged by the application. Validation failure logs contain only issue
 codes and field paths.
 
+Logs are intentionally not exported through OpenTelemetry. They remain Pino JSON on standard output for the runtime or
+log agent to collect independently.
+
+## Observability
+
+The application exports traces and metrics over OTLP using HTTP/protobuf.
+
+Incoming HTTP requests receive automatic HTTP and Fastify spans. The ingestion path also creates spans for payload
+validation and publisher acknowledgement. Health probe paths are excluded from tracing to avoid routine probe noise.
+
+Custom metrics:
+
+| Metric                        | Type            | Description                                                       |
+|-------------------------------|-----------------|-------------------------------------------------------------------|
+| `ingestion.requests`          | Counter         | Completed ingestion requests, grouped by outcome and status code. |
+| `ingestion.request.duration`  | Histogram       | End-to-end ingestion request duration in seconds.                 |
+| `ingestion.request.errors`    | Counter         | Unsuccessful or client-aborted ingestion requests.                |
+| `ingestion.requests.inflight` | Up-down counter | Ingestion requests currently in flight.                           |
+| `publisher.publish.duration`  | Histogram       | Time spent waiting for publisher acknowledgement, in seconds.     |
+| `publisher.publish.errors`    | Counter         | Publisher failures and admission rejections.                      |
+| `publisher.publish.inflight`  | Up-down counter | Publisher operations currently awaiting acknowledgement.          |
+
+Metric attributes are deliberately low-cardinality: outcome, HTTP status code, error type, and the schema-controlled
+event type. Identifiers such as `eventId`, `deviceId`, and `adId` are not metric attributes.
+
 ## Graceful shutdown
 
 The server handles `SIGTERM` and `SIGINT`:
@@ -124,7 +149,8 @@ The server handles `SIGTERM` and `SIGINT`:
 2. stop accepting new requests;
 3. wait for in-flight handlers;
 4. close the publisher;
-5. allow Node.js to exit naturally.
+5. flush and shut down OpenTelemetry;
+6. allow Node.js to exit naturally.
 
 The application does not call `process.exit()` during normal shutdown.
 
@@ -132,11 +158,16 @@ The application does not call `process.exit()` during normal shutdown.
 
 Configuration is read from the environment and validated at startup.
 
-| Variable                 | Default   | Description                                                             |
-|--------------------------|-----------|-------------------------------------------------------------------------|
-| `HOST`                   | `0.0.0.0` | HTTP listening address.                                                 |
-| `PORT`                   | `3000`    | HTTP listening port. Must be between 1 and 65535.                       |
-| `MAX_INFLIGHT_PUBLISHES` | `100`     | Maximum concurrent publisher calls per pod. Must be a positive integer. |
+| Variable                              | Default                       | Description                                                             |
+|---------------------------------------|-------------------------------|-------------------------------------------------------------------------|
+| `HOST`                                | `0.0.0.0`                     | HTTP listening address.                                                 |
+| `PORT`                                | `3000`                        | HTTP listening port. Must be between 1 and 65535.                       |
+| `MAX_INFLIGHT_PUBLISHES`              | `100`                         | Maximum concurrent publisher calls per pod. Must be a positive integer. |
+| `OTEL_SERVICE_NAME`                   | `unity-ads-metrics-ingestion` | OpenTelemetry service name.                                             |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | `http://localhost:4318`       | Base OTLP endpoint used for both traces and metrics.                    |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | `<base endpoint>/v1/traces`   | Optional signal-specific trace endpoint.                                |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `<base endpoint>/v1/metrics`  | Optional signal-specific metrics endpoint.                              |
+| `OTEL_EXPORTER_OTLP_HEADERS`          | none                          | Optional comma-separated OTLP authentication headers.                   |
 
 ## Local development
 

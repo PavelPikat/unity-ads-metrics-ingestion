@@ -2,6 +2,10 @@ import type {FastifyPluginAsync} from "fastify";
 import {metricEventSchema} from "../domain/metric-event.js";
 import {PublisherOverloadedError} from "../publisher/concurrency-limited-metrics-publisher.js";
 import type {MetricsPublisher} from "../publisher/metrics-publisher.js";
+import {
+    IngestionRequestTelemetry,
+    traceValidation,
+} from "../telemetry/instruments.js";
 
 interface MetricsRoutesOptions {
     publisher: MetricsPublisher;
@@ -11,23 +15,39 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRoutesOptions> = async (
     app,
     {publisher},
 ) => {
-    app.post("/v1/metrics", {
-        onRequest: async (request, reply) => {
-            const mediaType = request.headers["content-type"]
-                ?.split(";", 1)[0]
-                ?.trim()
-                .toLowerCase();
+    const requestTelemetry = new IngestionRequestTelemetry();
 
-            if (mediaType !== "application/json") {
-                return reply.code(415).send({
-                    statusCode: 415,
-                    error: "Unsupported Media Type",
-                    message: "Content-Type must be application/json",
-                });
-            }
+    app.post("/v1/metrics", {
+        onRequest: [
+            async (request) => {
+                requestTelemetry.start(request);
+            },
+            async (request, reply) => {
+                const mediaType = request.headers["content-type"]
+                    ?.split(";", 1)[0]
+                    ?.trim()
+                    .toLowerCase();
+
+                if (mediaType !== "application/json") {
+                    return reply.code(415).send({
+                        statusCode: 415,
+                        error: "Unsupported Media Type",
+                        message: "Content-Type must be application/json",
+                    });
+                }
+            },
+        ],
+        onResponse: async (request, reply) => {
+            requestTelemetry.complete(request, reply.statusCode);
+        },
+        onRequestAbort: async (request) => {
+            requestTelemetry.abort(request);
         },
     }, async (request, reply) => {
-        const result = metricEventSchema.safeParse(request.body);
+        const result = traceValidation(
+            () => metricEventSchema.safeParse(request.body),
+            (validation) => validation.success,
+        );
 
         if (!result.success) {
             request.log.info({
