@@ -69,10 +69,19 @@ jobs:
         run: kind create cluster --name manifest-validation --image "${KIND_NODE_IMAGE}" --wait 120s
 
       - name: Apply namespace admission policy
-        run: kubectl apply --filename k8s/namespace.yaml
+        run: >-
+          kubectl apply
+          --server-side
+          --field-manager=manifest-validation
+          --filename k8s/namespace.yaml
 
       - name: Dry-run deployment against Kubernetes API
-        run: kubectl apply --server-side --dry-run=server --kustomize k8s
+        run: >-
+          kubectl apply
+          --server-side
+          --dry-run=server
+          --field-manager=manifest-validation
+          --kustomize k8s
 
       - name: Delete disposable Kubernetes cluster
         if: always() && steps.create-kind-cluster.outcome == 'success'
