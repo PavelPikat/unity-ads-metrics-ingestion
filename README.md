@@ -26,6 +26,7 @@ POST /v1/metrics
 | [Observability](docs/observability.md) | Metrics, traces, logs, dashboards, and the local LGTM stack.   |
 | [Development](docs/development.md)     | Local setup, validation commands, and environment variables.   |
 | [Load testing](docs/load-testing.md)   | k6 profile, thresholds, configuration, and result exploration. |
+| [Kubernetes](docs/kubernetes.md)       | Kustomize manifests, availability, security, and tradeoffs.    |
 
 ## Quick start
 
