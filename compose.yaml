@@ -1,0 +1,66 @@
+services:
+  app:
+    build:
+      context: ./app
+    init: true
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_SERVICE_NAME: unity-ads-metrics-ingestion
+    labels:
+      io.opentelemetry.discovery.logs/enabled: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      otel-lgtm:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/health/live')
+          .then(response => process.exit(response.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    stop_grace_period: 35s
+
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.30.1
+    volumes:
+      - ./observability/otel-lgtm/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - ./observability/otel-lgtm/dashboard-provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/local.yaml:ro
+      - ./observability/otel-lgtm/dashboards:/otel-lgtm/dashboards:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "3001:3000"
+      - "4317:4317"
+      - "4318:4318"
+      - "9090:9090"
+
+  k6:
+    image: grafana/k6:2.1.0
+    profiles: [ load-test ]
+    environment:
+      BASE_URL: http://app:3000
+      K6_MAX_RATE: ${K6_MAX_RATE:-1000}
+      K6_PRE_ALLOCATED_VUS: ${K6_PRE_ALLOCATED_VUS:-}
+      K6_MAX_VUS: ${K6_MAX_VUS:-}
+      K6_STAGE_DURATION: ${K6_STAGE_DURATION:-5m}
+      K6_TEST_RUN_ID: ${K6_TEST_RUN_ID:-local}
+      K6_PROMETHEUS_RW_SERVER_URL: http://otel-lgtm:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: p(90),p(95),p(99),min,max
+    volumes:
+      - ./k6:/scripts:ro
+    command:
+      - run
+      - --out
+      - experimental-prometheus-rw
+      - /scripts/metrics-ingestion.js
+    depends_on:
+      app:
+        condition: service_healthy

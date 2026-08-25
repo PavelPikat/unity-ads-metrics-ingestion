@@ -8,13 +8,16 @@ import {ConcurrencyLimitedMetricsPublisher} from "./publisher/concurrency-limite
 import type {MetricsPublisher} from "./publisher/metrics-publisher.js";
 import {NoopMetricsPublisher} from "./publisher/noop-metrics-publisher.js";
 import {PublishAdmissionController} from "./publisher/publish-admission-controller.js";
+import {withTraceCorrelation} from "./logging.js";
 import {healthRoutes} from "./routes/health.js";
 import {metricsRoutes} from "./routes/metrics.js";
+import type {TelemetryLifecycle} from "./telemetry/lifecycle.js";
 
 export interface AppDependencies {
     admission?: PublishAdmissionController;
     publisher?: MetricsPublisher;
     state?: ApplicationState;
+    telemetry?: TelemetryLifecycle;
 }
 
 export function buildApp(
@@ -30,10 +33,10 @@ export function buildApp(
     );
     const state = dependencies.state ?? new ApplicationState();
     const app = Fastify({
-        logger: true,
         bodyLimit: 16 * 1024,
         requestTimeout: 30_000,
         ...options,
+        logger: withTraceCorrelation(options.logger),
     });
 
     app.addHook("onReady", async () => {
@@ -41,7 +44,17 @@ export function buildApp(
     });
     app.addHook("onClose", async () => {
         state.markNotReady();
-        await publisher.close();
+        try {
+            await publisher.close();
+        } finally {
+            if (dependencies.telemetry) {
+                try {
+                    await dependencies.telemetry.shutdown();
+                } catch (error) {
+                    app.log.error({err: error}, "OpenTelemetry shutdown failed");
+                }
+            }
+        }
     });
 
     app.register(healthRoutes, {state});
