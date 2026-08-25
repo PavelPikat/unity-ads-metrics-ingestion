@@ -1,0 +1,41 @@
+name: Kubernetes validation
+
+on:
+  pull_request:
+    paths:
+      - "k8s/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kubernetes-validation-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint and validate manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Render Kubernetes manifests
+        run: |
+          docker run --rm \
+            --volume "${PWD}:/work:ro" \
+            --workdir /work \
+            registry.k8s.io/kubectl:v1.35.0 \
+            kustomize k8s > "${RUNNER_TEMP}/k8s-rendered.yaml"
+
+      - name: Validate rendered manifests (offline dry run)
+        run: |
+          docker run --rm \
+            --volume "${RUNNER_TEMP}/k8s-rendered.yaml:/k8s-rendered.yaml:ro" \
+            ghcr.io/yannh/kubeconform:v0.8.0-alpine \
+            -strict \
+            -summary \
+            -kubernetes-version 1.35.0 \
+            /k8s-rendered.yaml
