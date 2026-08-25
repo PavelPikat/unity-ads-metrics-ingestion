@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: unity-ads-metrics-ingestion
+  labels:
+    app.kubernetes.io/name: unity-ads-metrics-ingestion
+    app.kubernetes.io/component: ingestion-api
+    app.kubernetes.io/part-of: unity-ads
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: unity-ads-metrics-ingestion

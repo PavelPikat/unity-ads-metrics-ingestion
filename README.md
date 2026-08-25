@@ -26,6 +26,7 @@ POST /v1/metrics
 | [Observability](docs/observability.md) | Metrics, traces, logs, dashboards, and the local LGTM stack.   |
 | [Development](docs/development.md)     | Local setup, validation commands, and environment variables.   |
 | [Load testing](docs/load-testing.md)   | k6 profile, thresholds, configuration, and result exploration. |
+| [Kubernetes](docs/kubernetes.md)       | Kustomize manifests, availability, security, and tradeoffs.    |
 
 ## Quick start
 
@@ -51,6 +52,12 @@ Start the application with Grafana, Prometheus, Tempo, Loki, and the OpenTelemet
 
 ```powershell
 docker compose up --build
+```
+
+or with k6 load test profile
+
+```powershell
+docker compose up --profile load-test run --rm k6
 ```
 
 Grafana is available at `http://localhost:3001` with provisioned application and k6 dashboards. See

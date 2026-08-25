@@ -1,0 +1,109 @@
+# Kubernetes deployment
+
+The `k8s/` directory is a Kustomize base that demonstrates how the ingestion service could run in Kubernetes. It is
+intended for design review and interview discussion rather than deployment to a real cluster.
+
+## Resources
+
+| Manifest                         | Purpose                                                                                  |
+|----------------------------------|------------------------------------------------------------------------------------------|
+| `namespace.yaml`                 | Isolates the workload and enforces the Restricted Pod Security Standard.                 |
+| `service-account.yaml`           | Gives the pod an identity without mounting Kubernetes API credentials.                   |
+| `deployment.yaml`                | Runs scalable pods with safe rollout, health, resource, security, and shutdown settings. |
+| `service.yaml`                   | Exposes the ingestion endpoint inside the cluster through a stable ClusterIP.            |
+| `horizontal-pod-autoscaler.yaml` | Scales the deployment between three and twenty replicas from CPU utilization.            |
+| `pod-disruption-budget.yaml`     | Keeps at least two replicas available during voluntary disruptions.                      |
+
+## Render and validate
+
+Render the final resources without contacting a cluster:
+
+```powershell
+kubectl kustomize k8s
+```
+
+Validate the rendered resources against Kubernetes OpenAPI schemas without connecting to a cluster:
+
+```powershell
+kubectl kustomize k8s |
+  docker run --rm -i ghcr.io/yannh/kubeconform:v0.8.0-alpine -strict -summary
+```
+
+For pull requests that change `k8s/`, the Kubernetes validation workflow also creates a disposable Kubernetes 1.35
+Kind cluster and submits the Kustomize resources using server-side dry run. The namespace is applied to that temporary
+cluster first so namespaced resources and the Restricted Pod Security admission policy can be evaluated. The workflow
+does not deploy the application and deletes the cluster after validation.
+
+The deployment references `unity-ads-metrics-ingestion:0.1.0` as a demonstration image. A real environment should use
+Kustomize to replace it with an immutable registry digest, for example:
+
+```powershell
+cd k8s
+kustomize edit set image unity-ads-metrics-ingestion=registry.example.com/ads/metrics-ingestion@sha256:<digest>
+```
+
+## Availability and rollout behavior
+
+- The HPA maintains at least three replicas, avoiding a single-pod availability boundary.
+- `maxUnavailable: 0` and `maxSurge: 1` retain all existing capacity while a replacement pod becomes ready.
+- `minReadySeconds` prevents a briefly healthy pod from immediately counting as available.
+- The disruption budget allows one replica at a time to be voluntarily evicted.
+- Topology spread constraints prefer separate zones and require available replicas to spread across nodes.
+- Explicit CPU and memory requests make scheduling predictable; limits bound a runaway container.
+
+The resource values are starting assumptions. Production requests, limits, and replica counts should be derived from
+load-test results and observed utilization rather than copied unchanged.
+
+## Autoscaling
+
+The Horizontal Pod Autoscaler keeps at least three replicas, scales up to twenty, and initially targets 70% average
+CPU utilization relative to each pod's CPU request. Scale-up can add four pods or double the current replica count per
+minute, whichever is larger. Scale-down waits for five minutes of stable recommendations and then removes at most one
+pod per minute.
+
+The HPA requires the cluster resource metrics API, normally provided by Metrics Server. CPU is a portable initial
+signal rather than a proven production target. Publisher saturation, acknowledgement latency, `429` responses, and
+Kafka capacity should be evaluated before choosing the final scaling policy; adding HTTP pods cannot increase Kafka
+capacity.
+
+The Deployment intentionally omits `spec.replicas` so repeated manifest applications do not overwrite the replica
+count managed by the HPA.
+
+## Health and shutdown
+
+The probes have distinct responsibilities:
+
+- the startup probe gives the process up to 60 seconds to initialize before liveness checks begin;
+- the readiness probe controls whether the pod receives Service traffic;
+- the liveness probe restarts a process that can no longer serve requests.
+
+On termination, Kubernetes first marks the endpoint as terminating. A five-second pre-stop delay gives endpoint changes
+time to propagate. The process then receives `SIGTERM`, marks itself unready, stops accepting new requests, drains
+in-flight handlers, closes the publisher, and flushes telemetry. The 45-second grace period includes the pre-stop delay.
+
+## Security posture
+
+- The namespace enforces the Restricted Pod Security Standard.
+- The image already runs as the non-root `node` user.
+- Privilege escalation is disabled and all Linux capabilities are dropped.
+- The root filesystem is read-only.
+- The runtime-default seccomp profile is enabled.
+- Service account tokens and Kubernetes service environment variables are not mounted into the pod.
+
+The application needs no Kubernetes API permissions, so no Role or RoleBinding is included.
+
+## Telemetry
+
+The deployment sends OTLP HTTP telemetry to the placeholder endpoint
+`opentelemetry-collector.observability.svc.cluster.local:4318`.
+
+The collector itself is intentionally outside this workload's Kustomize base. In a real platform it would normally be
+owned by the cluster observability team.
+
+## Deliberate omissions
+
+- An Ingress or Gateway depends on the platform's routing, TLS, and authentication standards.
+- NetworkPolicy needs the actual Kafka, DNS, and OpenTelemetry destinations before egress can be safely restricted.
+- Kafka credentials and configuration belong in environment-specific secret/configuration resources.
+
+These should be added through environment overlays once the deployment platform and operational contracts are known.
