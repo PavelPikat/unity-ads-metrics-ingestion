@@ -190,3 +190,90 @@ cd app
 pnpm install
 pnpm dev
 ```
+
+## Local observability stack
+
+Docker Compose can run the production app image together with Grafana's OpenTelemetry LGTM development stack:
+
+```powershell
+docker compose up --build
+```
+
+The Compose network sends the application's OTLP data directly to the bundled OpenTelemetry Collector. Available local
+endpoints:
+
+| Endpoint                | Purpose                                      |
+|-------------------------|----------------------------------------------|
+| `http://localhost:3000` | Metrics ingestion application.               |
+| `http://localhost:3001` | Grafana UI.                                  |
+| `http://localhost:9090` | Prometheus UI.                               |
+| `http://localhost:4318` | OTLP HTTP receiver for host-based processes. |
+
+In Grafana, use Metrics Drilldown or Explore and search for `ingestion_`, `publisher_`, `nodejs_`, or `v8js_`. Use
+Explore to inspect traces for the `unity-ads-metrics-ingestion` service.
+
+Grafana provisions the **Metrics Ingestion — Application Overview** dashboard at startup. It combines request rate,
+acceptance and error rates, latency percentiles, publisher back-pressure, Node.js runtime metrics, container CPU and
+memory, recent traces, and structured application logs. Open it under **Dashboards** or directly at
+`http://localhost:3001/d/unity-ads-metrics-ingestion-overview/metrics-ingestion-e28094-application-overview`.
+Use the **Service name** selector for application metrics, traces, and logs. The separate **Container** selector
+controls
+only the Docker CPU and memory panels because OpenTelemetry service names and Docker container names are independent.
+
+The collector reads local Docker container statistics every five seconds. Search for `container_cpu_` and
+`container_memory_` metrics and filter by `container_name`. Useful starting queries include:
+
+```promql
+container_cpu_utilization_ratio{container_name="unity-ads-metrics-ingestion-app-1"}
+container_memory_usage_total_bytes{container_name="unity-ads-metrics-ingestion-app-1"}
+```
+
+The Docker socket mount used for container discovery and statistics is intended for local development. Kubernetes
+resource metrics should be collected from the kubelet or cluster telemetry pipeline instead.
+
+The LGTM OpenTelemetry Collector also discovers the app container through Docker, reads its stdout logs, parses the
+Docker and Pino JSON layers, and forwards the records to Loki. In Grafana Explore, select the Loki data source and use:
+
+```logql
+{service_name="unity-ads-metrics-ingestion"}
+```
+
+Stop the stack gracefully so the application flushes pending telemetry:
+
+```powershell
+docker compose down
+```
+
+## Local load test
+
+The optional `load-test` Compose profile runs a k6 ingestion test against the containerized app. By default it ramps
+from 50 requests per second to 1,000 requests per second across five 5-minute stages, then ramps down for 5 minutes.
+The complete run takes approximately 30 minutes and schedules roughly 788,000 requests.
+
+```powershell
+$env:K6_TEST_RUN_ID = "local-1"
+docker compose up -d --build
+docker compose --profile load-test run --rm k6
+```
+
+k6 writes its live test results into the LGTM Prometheus instance. Grafana provisions the **k6 Prometheus** dashboard
+from `observability/otel-lgtm/dashboards/k6.json` when the stack starts. It is available under **Dashboards** or
+directly
+at `http://localhost:3001/d/ccbb2351-2ae2-462f-ae0e-f2c893ad1028/k6-prometheus`.
+
+Filter by the `testid` label when comparing runs. Trend metrics export `p(90)`, `p(95)`, `p(99)`, `min`, and `max`
+through `K6_PROMETHEUS_RW_TREND_STATS`. The end-of-test summary is also printed to the terminal. The app and
+observability stack remain running after the test so the results can be inspected.
+
+The peak arrival rate and duration of each of the six stages can be overridden. k6 derives its default VU capacity from
+the peak rate: 500 pre-allocated VUs and up to 2,000 VUs for the default test. `K6_PRE_ALLOCATED_VUS` and `K6_MAX_VUS`
+can override those values if the load generator becomes the bottleneck. For example, this runs a short smoke test
+peaking at 10 requests per second:
+
+```powershell
+$env:K6_MAX_RATE = "10"
+$env:K6_STAGE_DURATION = "10s"
+$env:K6_TEST_RUN_ID = "smoke"
+docker compose up -d --build
+docker compose --profile load-test run --rm k6
+```

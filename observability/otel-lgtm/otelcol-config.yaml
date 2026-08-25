@@ -1,0 +1,107 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - http://*
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: opentelemetry-collector
+          scrape_interval: 1s
+          static_configs:
+            - targets: [ 127.0.0.1:8888 ]
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 5s
+    container_labels_to_metric_labels:
+      com.docker.compose.project: compose.project
+      com.docker.compose.service: compose.service
+  receiver_creator/app_logs:
+    watch_observers: [ docker_observer ]
+    receivers:
+      filelog/app:
+        rule: >-
+          type == "container" and port == 0 and
+          labels["io.opentelemetry.discovery.logs/enabled"] == "true"
+        config:
+          include:
+            - /var/lib/docker/containers/`container_id`/*-json.log
+          start_at: beginning
+          include_file_name: false
+          include_file_path: true
+          operators:
+            - id: docker-parser
+              type: container
+              format: docker
+              add_metadata_from_filepath: false
+            - id: pino-parser
+              type: json_parser
+              parse_from: body
+              parse_to: attributes
+              on_error: send
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: /ready
+  docker_observer:
+    endpoint: unix:///var/run/docker.sock
+    include_all_containers: true
+
+processors:
+  batch:
+  batch/app_logs:
+  resource/app_logs:
+    attributes:
+      - key: service.name
+        value: unity-ads-metrics-ingestion
+        action: upsert
+      - key: deployment.environment.name
+        value: local
+        action: upsert
+
+exporters:
+  otlp_http/metrics:
+    endpoint: http://127.0.0.1:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp_http/traces:
+    endpoint: http://127.0.0.1:4418
+    tls:
+      insecure: true
+  otlp_http/logs:
+    endpoint: http://127.0.0.1:3100/otlp
+    tls:
+      insecure: true
+  otlp_grpc/profiles:
+    endpoint: http://127.0.0.1:4040
+    tls:
+      insecure: true
+
+service:
+  extensions: [ health_check, docker_observer ]
+  pipelines:
+    traces:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ otlp_http/traces ]
+    metrics:
+      receivers: [ otlp, prometheus/collector, docker_stats ]
+      processors: [ batch ]
+      exporters: [ otlp_http/metrics ]
+    logs:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ otlp_http/logs ]
+    logs/app:
+      receivers: [ receiver_creator/app_logs ]
+      processors: [ resource/app_logs, batch/app_logs ]
+      exporters: [ otlp_http/logs ]
+    profiles:
+      receivers: [ otlp ]
+      exporters: [ otlp_grpc/profiles ]
