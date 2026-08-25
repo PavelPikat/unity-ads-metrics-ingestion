@@ -54,6 +54,12 @@ Start the application with Grafana, Prometheus, Tempo, Loki, and the OpenTelemet
 docker compose up --build
 ```
 
+or with k6 load test profile
+
+```powershell
+docker compose up --profile load-test run --rm k6
+```
+
 Grafana is available at `http://localhost:3001` with provisioned application and k6 dashboards. See
 [Observability](docs/observability.md) for details.
 
