@@ -57,7 +57,7 @@ docker compose up --build
 or with k6 load test profile
 
 ```powershell
-docker compose up --profile load-test run --rm k6
+docker compose --profile load-test run --rm k6
 ```
 
 Grafana is available at `http://localhost:3001` with provisioned application and k6 dashboards. See
