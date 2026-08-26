@@ -60,8 +60,8 @@ or with k6 load test profile
 docker compose --profile load-test run --rm k6
 ```
 
-Grafana is available at `http://localhost:3001` with provisioned application and k6 dashboards. See
-[Observability](docs/observability.md) for details.
+Grafana is available at `http://localhost:3001` with provisioned application and k6 dashboards, traces, logs, and
+Pyroscope CPU/heap profiles. See [Observability](docs/observability.md) for details.
 
 ## Validate the app
 
