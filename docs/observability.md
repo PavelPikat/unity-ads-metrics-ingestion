@@ -1,7 +1,8 @@
 # Observability
 
-The application exports metrics and traces through OpenTelemetry. Logs remain structured Pino JSON on standard output
-and are collected independently by the local OpenTelemetry Collector.
+The application exports metrics and traces through OpenTelemetry and sends continuous profiles through the Pyroscope
+Node.js SDK. Logs remain structured Pino JSON on standard output and are collected independently by the local
+OpenTelemetry Collector.
 
 ## Traces
 
@@ -9,6 +10,16 @@ Traces are exported over OTLP using HTTP/protobuf. Incoming requests receive aut
 ingestion path also creates spans for payload validation and publisher acknowledgement.
 
 Health probe paths are excluded from tracing to avoid routine probe noise.
+
+## Profiles
+
+Profiling is opt-in outside Compose and starts when `PYROSCOPE_SERVER_ADDRESS` is configured. The profiler continuously
+captures wall time, CPU time, and sampled heap allocations. Profiles use the same
+`unity-ads-metrics-ingestion` service name as traces and metrics so the signals are easy to compare.
+
+The Pyroscope SDK pushes profiles directly to port 4040; profiling data does not pass through the OpenTelemetry
+Collector. During graceful shutdown, the application stops the profiler and uploads its final partial profile before
+exiting.
 
 ## Application metrics
 
@@ -56,12 +67,16 @@ docker compose up --build
 |-------------------------|----------------------------------------------|
 | `http://localhost:3000` | Metrics ingestion application.               |
 | `http://localhost:3001` | Grafana UI.                                  |
+| `http://localhost:4040` | Pyroscope API for host-based profilers.       |
 | `http://localhost:9090` | Prometheus UI.                               |
 | `http://localhost:4318` | OTLP HTTP receiver for host-based processes. |
 
 The Compose network sends the application's OTLP data directly to the bundled collector. In Grafana Metrics Drilldown
 or Explore, search for `ingestion_`, `publisher_`, `nodejs_`, or `v8js_`. Traces use the
 `unity-ads-metrics-ingestion` service name.
+
+Open **Profiles Drilldown** in Grafana and select `unity-ads-metrics-ingestion` to explore flame graphs. Compose uploads
+profiles every ten seconds; generate traffic with the k6 profile to produce a more representative CPU flame graph.
 
 ## Provisioned dashboards
 

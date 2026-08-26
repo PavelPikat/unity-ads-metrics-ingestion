@@ -49,6 +49,21 @@ The OpenTelemetry SDK reads its standard exporter variables from the environment
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `<base endpoint>/v1/metrics`  | Optional signal-specific metrics endpoint.            |
 | `OTEL_EXPORTER_OTLP_HEADERS`          | none                          | Optional comma-separated OTLP authentication headers. |
 
+## Continuous profiling configuration
+
+Continuous profiling is disabled unless `PYROSCOPE_SERVER_ADDRESS` is set. When enabled, the application collects
+wall-time, CPU-time, and heap profiles with Grafana's Node.js profiler and pushes them directly to Pyroscope.
+
+| Variable                      | Default                       | Description                                                   |
+|-------------------------------|-------------------------------|---------------------------------------------------------------|
+| `PYROSCOPE_SERVER_ADDRESS`    | none                          | Pyroscope base URL. Setting it enables continuous profiling.  |
+| `PYROSCOPE_APPLICATION_NAME`  | `OTEL_SERVICE_NAME` or app ID | Value used for the Pyroscope `service_name` label.            |
+| `PYROSCOPE_FLUSH_INTERVAL_MS` | `60000`                       | Profile upload interval in milliseconds.                     |
+
+For a host-based application using the Compose LGTM backend, use
+`PYROSCOPE_SERVER_ADDRESS=http://localhost:4040`. Compose configures the containerized application automatically and
+uses a ten-second flush interval so profiles appear quickly during local demos.
+
 ## Docker Compose
 
 Build and start the application with its local observability stack from the repository root:

@@ -6,6 +6,9 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
       OTEL_SERVICE_NAME: unity-ads-metrics-ingestion
+      PYROSCOPE_APPLICATION_NAME: unity-ads-metrics-ingestion
+      PYROSCOPE_FLUSH_INTERVAL_MS: "10000"
+      PYROSCOPE_SERVER_ADDRESS: http://otel-lgtm:4040
     labels:
       io.opentelemetry.discovery.logs/enabled: "true"
     ports:
@@ -38,6 +41,7 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     ports:
       - "3001:3000"
+      - "4040:4040"
       - "4317:4317"
       - "4318:4318"
       - "9090:9090"

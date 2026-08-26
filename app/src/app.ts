@@ -51,7 +51,7 @@ export function buildApp(
                 try {
                     await dependencies.telemetry.shutdown();
                 } catch (error) {
-                    app.log.error({err: error}, "OpenTelemetry shutdown failed");
+                    app.log.error({err: error}, "Telemetry shutdown failed");
                 }
             }
         }

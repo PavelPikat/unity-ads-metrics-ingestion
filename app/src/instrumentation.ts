@@ -1,6 +1,6 @@
 import {startTelemetry} from "./telemetry/sdk.js";
 
-const telemetry = startTelemetry();
+const telemetry = await startTelemetry();
 
 try {
     const {startServer} = await import("./server.js");
@@ -12,6 +12,6 @@ try {
     try {
         await telemetry.shutdown();
     } catch (shutdownError) {
-        console.error("OpenTelemetry shutdown failed", shutdownError);
+        console.error("Telemetry shutdown failed", shutdownError);
     }
 }
